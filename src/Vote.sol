@@ -8,6 +8,8 @@ contract Vote is Ownable {
 
     // Error messages
     error CandidateAlreadyExists();
+    error NoCandidatesAvailable();
+    error AlreadyVoted();
 
     // Events
     event CandidateAdded(string name, string party);
@@ -21,8 +23,12 @@ contract Vote is Ownable {
         uint256 votes;
     }
 
-    mapping(bytes32 => Candidate) internal idToCandidate;
-    mapping(address => bool) internal voted;
+    // Mappings
+    mapping(bytes32 => Candidate) public idToCandidate;
+    mapping(address => bool) public voted;
+    mapping(bytes32 => bool) public candidateExists;
+
+    // Arrays
     bytes32[] public listOfIds;
 
     // Candidate Id is keccak256 combination of candidate's name and party
@@ -31,11 +37,13 @@ contract Vote is Ownable {
         return ID;
     }
 
-    // Onlyowner function to add the candidate !
-    function addCandidate(string memory _name, string memory _party) external onlyOwner() noDuplicateCandidate(_name, _party) {
+    // Only owner function to add the candidate !
+    function addCandidate(string memory _name, string memory _party) external onlyOwner() {
         bytes32 id = setCandidateId(_name, _party);
+        require(!candidateExists[id], CandidateAlreadyExists());
         listOfIds.push(id);
         idToCandidate[id] = Candidate({name: _name, party: _party, votes: 0});
+        candidateExists[id] = true;
         emit CandidateAdded(_name, _party);
     }
 
@@ -70,27 +78,8 @@ contract Vote is Ownable {
 
     // To check whether the candidate exists and avoids voter voting twice
     modifier canVoteTo(string memory _name, string memory _party) {
-        require(!voted[msg.sender], "You have already voted !");
-        bytes32 id = setCandidateId(_name, _party);
-        bool found = false;
-        for (uint256 i = 0; i < listOfIds.length; i++) {
-            if (id == listOfIds[i]) {
-                found = true;
-                break;
-            }
-        }
-        require(found, "Please enter a valid candidate");
-        _;
-    }
-
-    // To avoid adding same candidate twice
-    modifier noDuplicateCandidate(string memory _name, string memory _party) {
-        bytes32 id = setCandidateId(_name, _party);
-        for(uint i=0; i<listOfIds.length; i++){
-            if(id == listOfIds[i]){
-                revert CandidateAlreadyExists();
-            }
-        }
+        require(!voted[msg.sender], AlreadyVoted());
+        require(candidateExists[setCandidateId(_name, _party)], NoCandidatesAvailable());
         _;
     }
     
