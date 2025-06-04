@@ -74,7 +74,8 @@ contract Vote is Ownable {
         if(listOfIds.length <= 0) revert NoCandidatesAvailable();
 
         Candidate[] memory candidates = new Candidate[](listOfIds.length);
-        for(uint i=0; i<listOfIds.length; i++){
+        uint arrayLength = listOfIds.length;
+        for(uint i=0; i<arrayLength; i++){
             candidates[i] = idToCandidate[listOfIds[i]];
         }
 
@@ -94,14 +95,20 @@ contract Vote is Ownable {
         emit Voted(msg.sender, _name);
     }
 
+    // to check the voter's voting status
+    function hasVoted(address _voter) external view returns(bool){
+        return voted[_voter];
+    }
+
     // Functions to be used After Election is over to find and declare the winner!
 
     function getWinner() public view onlyOwner() returns (string memory, uint256) {
 
         uint256 maxvotes = 0;
         bytes32 winnerId;
+        uint arrayLength = listOfIds.length;
 
-        for (uint256 i = 0; i < listOfIds.length; i++) {
+        for (uint256 i = 0; i < arrayLength; i++) {
             bytes32 id = listOfIds[i];
             uint256 votes = idToCandidate[id].votes;
             if (votes > maxvotes) {
