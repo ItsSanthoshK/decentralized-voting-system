@@ -6,10 +6,15 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 contract Vote is Ownable {
     constructor() Ownable(msg.sender) {}
 
-    // Error messages
+    // Error messages during election
     error CandidateAlreadyExists();
     error NoCandidatesAvailable();
     error AlreadyVoted();
+
+    // Error messages for election timings
+    error ElectionAlreadyStarted();
+    error ElectionNotStartedYet();
+    error ElectionEnded();
 
     // Events
     event CandidateAdded(string name, string party);
@@ -25,11 +30,15 @@ contract Vote is Ownable {
 
     // Mappings
     mapping(bytes32 => Candidate) public idToCandidate;
-    mapping(address => bool) public voted;
     mapping(bytes32 => bool) public candidateExists;
+    mapping(address => bool) public voted;
 
     // Arrays
     bytes32[] public listOfIds;
+
+    // Vote timings variable
+    uint beforeVoteStart = block.timestamp;
+    uint afterVoteStart = 0;
 
     // Candidate Id is keccak256 combination of candidate's name and party
     function setCandidateId(string memory _name, string memory _party) private pure returns (bytes32) {
@@ -39,27 +48,58 @@ contract Vote is Ownable {
 
     // Only owner function to add the candidate !
     function addCandidate(string memory _name, string memory _party) external onlyOwner() {
-        bytes32 id = setCandidateId(_name, _party);
-        require(!candidateExists[id], CandidateAlreadyExists());
+        if(afterVoteStart > beforeVoteStart) revert ElectionAlreadyStarted();               // REF:
+        bytes32 id = setCandidateId(_name, _party);                                         // Checking vote timings and candidate availability
+        if(candidateExists[id]) revert CandidateAlreadyExists();
+
         listOfIds.push(id);
         idToCandidate[id] = Candidate({name: _name, party: _party, votes: 0});
         candidateExists[id] = true;
+
         emit CandidateAdded(_name, _party);
+    }
+
+    // NOTE:
+    /* This is the trigger function for starting election !
+     Use this function once all candidates are added and 
+     confirm after this there's no way to start the election */
+    function startVoting() external onlyOwner(){
+        require(listOfIds.length > 2, "Add atleast 3 candidates to have a fair election !");
+        afterVoteStart = block.timestamp + 3 days;
+    }
+
+    // List all the available candidates
+    function getAllCandidates() external view returns(Candidate[] memory){
+        if(listOfIds.length <= 0) revert NoCandidatesAvailable();
+
+        Candidate[] memory candidates;
+        for(uint i=0; i<listOfIds.length; i++){
+            candidates[i] = idToCandidate[listOfIds[i]];
+        }
+
+        return candidates;
     }
 
     // people can vote for their favourite candidate
     function voteFor(string memory _name, string memory _party) external canVoteTo(_name, _party) {
+
+        if(afterVoteStart < beforeVoteStart) revert ElectionNotStartedYet();
+        if(block.timestamp > afterVoteStart) revert ElectionEnded();
+
         bytes32 id = setCandidateId(_name, _party);
         idToCandidate[id].votes++;
         voted[msg.sender] = true;
+
         emit Voted(msg.sender, _name);
     }
 
-    // Functions to be used After Election is over to find the winner!
+    // Functions to be used After Election is over to find and declare the winner!
 
     function getWinner() public view onlyOwner() returns (string memory, uint256) {
+
         uint256 maxvotes = 0;
         bytes32 winnerId;
+
         for (uint256 i = 0; i < listOfIds.length; i++) {
             bytes32 id = listOfIds[i];
             uint256 votes = idToCandidate[id].votes;
@@ -68,6 +108,7 @@ contract Vote is Ownable {
                 winnerId = id;
             }
         }
+
         return (idToCandidate[winnerId].name, maxvotes);
     }
 
@@ -78,9 +119,8 @@ contract Vote is Ownable {
 
     // To check whether the candidate exists and avoids voter voting twice
     modifier canVoteTo(string memory _name, string memory _party) {
-        require(!voted[msg.sender], AlreadyVoted());
-        require(candidateExists[setCandidateId(_name, _party)], NoCandidatesAvailable());
+        if(voted[msg.sender]) revert AlreadyVoted();
+        if( ! (candidateExists[ setCandidateId(_name, _party) ])) revert NoCandidatesAvailable();
         _;
     }
-    
 }
