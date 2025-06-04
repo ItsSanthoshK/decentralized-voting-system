@@ -37,19 +37,19 @@ contract Vote is Ownable {
     bytes32[] public listOfIds;
 
     // Vote timings variable
-    uint beforeVoteStart = block.timestamp;
-    uint afterVoteStart = 0;
+    uint public voteStart;
+    uint public voteEnd;
 
     // Candidate Id is keccak256 combination of candidate's name and party
-    function setCandidateId(string memory _name, string memory _party) private pure returns (bytes32) {
+    function generateCandidateId(string memory _name, string memory _party) private pure returns (bytes32) {
         bytes32 ID = keccak256(abi.encodePacked(_name, _party));
         return ID;
     }
 
     // Only owner function to add the candidate !
     function addCandidate(string memory _name, string memory _party) external onlyOwner() {
-        if(afterVoteStart > beforeVoteStart) revert ElectionAlreadyStarted();               // REF:
-        bytes32 id = setCandidateId(_name, _party);                                         // Checking vote timings and candidate availability
+        if(voteStart > 0) revert ElectionAlreadyStarted();                                  // REF:
+        bytes32 id = generateCandidateId(_name, _party);                                         // Checking vote timings and candidate availability
         if(candidateExists[id]) revert CandidateAlreadyExists();
 
         listOfIds.push(id);
@@ -65,14 +65,15 @@ contract Vote is Ownable {
      confirm after this there's no way to start the election */
     function startVoting() external onlyOwner(){
         require(listOfIds.length > 2, "Add atleast 3 candidates to have a fair election !");
-        afterVoteStart = block.timestamp + 3 days;
+        voteStart = block.timestamp;
+        voteEnd = block.timestamp + 3 days;
     }
 
     // List all the available candidates
     function getAllCandidates() external view returns(Candidate[] memory){
         if(listOfIds.length <= 0) revert NoCandidatesAvailable();
 
-        Candidate[] memory candidates;
+        Candidate[] memory candidates = new Candidate[](listOfIds.length);
         for(uint i=0; i<listOfIds.length; i++){
             candidates[i] = idToCandidate[listOfIds[i]];
         }
@@ -83,10 +84,10 @@ contract Vote is Ownable {
     // people can vote for their favourite candidate
     function voteFor(string memory _name, string memory _party) external canVoteTo(_name, _party) {
 
-        if(afterVoteStart < beforeVoteStart) revert ElectionNotStartedYet();
-        if(block.timestamp > afterVoteStart) revert ElectionEnded();
+        if(voteStart == 0) revert ElectionNotStartedYet();
+        if(block.timestamp > voteEnd) revert ElectionEnded();
 
-        bytes32 id = setCandidateId(_name, _party);
+        bytes32 id = generateCandidateId(_name, _party);
         idToCandidate[id].votes++;
         voted[msg.sender] = true;
 
@@ -120,7 +121,7 @@ contract Vote is Ownable {
     // To check whether the candidate exists and avoids voter voting twice
     modifier canVoteTo(string memory _name, string memory _party) {
         if(voted[msg.sender]) revert AlreadyVoted();
-        if( ! (candidateExists[ setCandidateId(_name, _party) ])) revert NoCandidatesAvailable();
+        if( ! (candidateExists[ generateCandidateId(_name, _party) ])) revert NoCandidatesAvailable();
         _;
     }
 }
