@@ -102,9 +102,12 @@ contract Vote is Ownable {
     }
 
     // Functions to be used After Election is over to find and declare the winner!
-
+    /* loops through all candidate and updates the max vote with highest vote and
+     returns the candidate's name and votes he received */
+     // NOTE: the tie event is yet to develop and will be available in future
     function getWinner() public view onlyOwner() returns (string memory, uint256) {
 
+        if(0 == voteStart) revert ElectionNotStartedYet();
         if(block.timestamp < voteEnd) revert ElectionStillGoingOn();
 
         uint256 maxvotes = 0;
