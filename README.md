@@ -58,4 +58,4 @@ function getWinner();
 
 ## License
 
-Anyone can use my code in your projects or fork my repo and improve it or publishing it. All my projects are full open source as of now and forever.
+This project is licensed under the MIT license - see the [LICENSE](./LICENSE) file for details.
