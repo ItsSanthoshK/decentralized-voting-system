@@ -13,6 +13,7 @@ contract Vote is Ownable {
 
     // Error messages for election timings
     error ElectionAlreadyStarted();
+    error ElectionStillGoingOn();
     error ElectionNotStartedYet();
     error ElectionEnded();
 
@@ -103,6 +104,8 @@ contract Vote is Ownable {
     // Functions to be used After Election is over to find and declare the winner!
 
     function getWinner() public view onlyOwner() returns (string memory, uint256) {
+
+        if(block.timestamp < voteEnd) revert ElectionStillGoingOn();
 
         uint256 maxvotes = 0;
         bytes32 winnerId;
