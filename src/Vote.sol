@@ -22,6 +22,9 @@ contract Vote is Ownable {
     event Voted(address voter, string candidate);
     event WinnerDeclared(string name, uint256 votes);
 
+    event ElectionStarted(uint256 startTime, uint256 endTime);
+    event ElectionAborted(uint256 endTime);
+
     // Candidate Details struct
     struct Candidate {
         string name;
@@ -30,32 +33,32 @@ contract Vote is Ownable {
     }
 
     // Mappings
-    mapping(bytes32 => Candidate) public idToCandidate;
-    mapping(bytes32 => bool) public candidateExists;
-    mapping(address => bool) public voted;
+    mapping(bytes32 => Candidate) public s_idToCandidate;
+    mapping(bytes32 => bool) public s_candidateExists;
+    mapping(address => bool) public s_voted;
 
     // Arrays
-    bytes32[] public listOfIds;
+    bytes32[] public s_listOfIds;
 
     // Vote timings variable
-    uint public voteStart;
-    uint public voteEnd;
+    uint256 public voteStart = 0;
+    uint256 public voteEnd = 0;
 
     // Candidate Id is keccak256 combination of candidate's name and party
-    function generateCandidateId(string memory _name, string memory _party) private pure returns (bytes32) {
+    function generateCandidateId(string memory _name, string memory _party) public pure returns (bytes32) {
         bytes32 ID = keccak256(abi.encodePacked(_name, _party));
         return ID;
     }
 
     // Only owner function to add the candidate !
-    function addCandidate(string memory _name, string memory _party) external onlyOwner() {
-        if(voteStart > 0) revert ElectionAlreadyStarted();                                  // REF:
-        bytes32 id = generateCandidateId(_name, _party);                                         // Checking vote timings and candidate availability
-        if(candidateExists[id]) revert CandidateAlreadyExists();
+    function addCandidate(string memory _name, string memory _party) external onlyOwner {
+        if (voteStart > 0) revert ElectionAlreadyStarted(); // REF:
+        bytes32 id = generateCandidateId(_name, _party); // Checking vote timings and candidate availability
+        if (s_candidateExists[id]) revert CandidateAlreadyExists();
 
-        listOfIds.push(id);
-        idToCandidate[id] = Candidate({name: _name, party: _party, votes: 0});
-        candidateExists[id] = true;
+        s_listOfIds.push(id);
+        s_idToCandidate[id] = Candidate({name: _name, party: _party, votes: 0});
+        s_candidateExists[id] = true;
 
         emit CandidateAdded(_name, _party);
     }
@@ -64,20 +67,32 @@ contract Vote is Ownable {
     /* This is the trigger function for starting election !
      Use this function once all candidates are added and 
      confirm after this there's no way to start the election */
-    function startVoting() external onlyOwner(){
-        require(listOfIds.length > 2, "Add atleast 3 candidates to have a fair election !");
+    function startVoting() external onlyOwner {
+        require(s_listOfIds.length > 2, "Add atleast 3 candidates to have a fair election !");
         voteStart = block.timestamp;
         voteEnd = block.timestamp + 3 days;
     }
 
-    // List all the available candidates
-    function getAllCandidates() external view returns(Candidate[] memory){
-        if(listOfIds.length <= 0) revert NoCandidatesAvailable();
+    /* NOTE: This endVoting logic is still not fully developed yet ! Especially the voters
+    voting status is not reseted after ending the vote. So the contract is still 
+    not reusable yet ! */
+    function endVoting() external onlyOwner {
+        require(voteStart != 0, "Election is not started yet to stop it !");
+        delete s_listOfIds;
+        voteStart = 0;
+        voteEnd = 0;
 
-        Candidate[] memory candidates = new Candidate[](listOfIds.length);
-        uint arrayLength = listOfIds.length;
-        for(uint i=0; i<arrayLength; i++){
-            candidates[i] = idToCandidate[listOfIds[i]];
+        emit ElectionAborted(voteEnd);
+    }
+
+    // List all the available candidates
+    function getAllCandidates() external view returns (Candidate[] memory) {
+        if (s_listOfIds.length <= 0) revert NoCandidatesAvailable();
+
+        Candidate[] memory candidates = new Candidate[](s_listOfIds.length);
+        uint256 arrayLength = s_listOfIds.length;
+        for (uint256 i = 0; i < arrayLength; i++) {
+            candidates[i] = s_idToCandidate[s_listOfIds[i]];
         }
 
         return candidates;
@@ -85,45 +100,42 @@ contract Vote is Ownable {
 
     // people can vote for their favourite candidate
     function voteFor(string memory _name, string memory _party) external canVoteTo(_name, _party) {
-
-        if(voteStart == 0) revert ElectionNotStartedYet();
-        if(block.timestamp > voteEnd) revert ElectionEnded();
+        if (voteStart == 0) revert ElectionNotStartedYet();
+        if (block.timestamp > voteEnd) revert ElectionEnded();
 
         bytes32 id = generateCandidateId(_name, _party);
-        idToCandidate[id].votes++;
-        voted[msg.sender] = true;
+        s_idToCandidate[id].votes++;
+        s_voted[msg.sender] = true;
 
         emit Voted(msg.sender, _name);
     }
 
     // to check the voter's voting status
-    function hasVoted(address _voter) external view returns(bool){
-        return voted[_voter];
+    function hasVoted(address _voter) external view returns (bool) {
+        return s_voted[_voter];
     }
 
     // Functions to be used After Election is over to find and declare the winner!
     /* loops through all candidate and updates the max vote with highest vote and
      returns the candidate's name and votes he received */
-     // NOTE: the tie event is yet to develop and will be available in future
-    function getWinner() public view onlyOwner() returns (string memory, uint256) {
-
-        if(0 == voteStart) revert ElectionNotStartedYet();
-        if(block.timestamp < voteEnd) revert ElectionStillGoingOn();
+    // NOTE: the tie event is yet to develop and will be available in future
+    function getWinner() public view onlyOwner returns (string memory, uint256) {
+        if (0 == voteStart) revert ElectionNotStartedYet();
+        if (block.timestamp < voteEnd) revert ElectionStillGoingOn();
 
         uint256 maxvotes = 0;
         bytes32 winnerId;
-        uint arrayLength = listOfIds.length;
-
+        uint256 arrayLength = s_listOfIds.length;
         for (uint256 i = 0; i < arrayLength; i++) {
-            bytes32 id = listOfIds[i];
-            uint256 votes = idToCandidate[id].votes;
+            bytes32 id = s_listOfIds[i];
+            uint256 votes = s_idToCandidate[id].votes;
             if (votes > maxvotes) {
                 maxvotes = votes;
                 winnerId = id;
             }
         }
 
-        return (idToCandidate[winnerId].name, maxvotes);
+        return (s_idToCandidate[winnerId].name, maxvotes);
     }
 
     function declareWinner() external onlyOwner {
@@ -131,10 +143,16 @@ contract Vote is Ownable {
         emit WinnerDeclared(winner, votes);
     }
 
+    // Getter functions
+    // List of ids length getter
+    function getListOfIdsArrayLength() public view returns (uint256 len) {
+        return s_listOfIds.length;
+    }
+
     // To check whether the candidate exists and avoids voter voting twice
     modifier canVoteTo(string memory _name, string memory _party) {
-        if(voted[msg.sender]) revert AlreadyVoted();
-        if( ! (candidateExists[ generateCandidateId(_name, _party) ])) revert NoCandidatesAvailable();
+        if (s_voted[msg.sender]) revert AlreadyVoted();
+        if (!(s_candidateExists[generateCandidateId(_name, _party)])) revert NoCandidatesAvailable();
         _;
     }
 }
